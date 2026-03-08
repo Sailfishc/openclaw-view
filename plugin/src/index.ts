@@ -17,6 +17,7 @@ import { TraceLogger } from './trace-logger.js';
 import type { PluginApi, PluginConfig } from './types.js';
 import type {
   MessageReceivedPayload,
+  MessageTranscribedPayload,
   MessagePreprocessedPayload,
   MessageSentPayload,
   PromptBuildPayload,
@@ -61,6 +62,27 @@ export default (api: PluginApi) => {
       });
     },
     { name: `${PLUGIN_PREFIX}.message-received`, description: 'Record inbound messages' },
+  );
+
+  api.registerHook(
+    'message:transcribed',
+    async (ctx: Record<string, unknown>) => {
+      const payload: MessageTranscribedPayload = {
+        body: logger.truncate(ctx.body as string | undefined),
+        bodyForAgent: logger.truncate(ctx.bodyForAgent as string | undefined),
+        transcript: logger.truncate(ctx.transcript as string | undefined),
+        channelId: ctx.channelId as string | undefined,
+        conversationId: ctx.conversationId as string | undefined,
+        messageId: ctx.messageId as string | undefined,
+      };
+      logger.record({
+        eventType: 'message:transcribed',
+        payload,
+        channelId: ctx.channelId as string | undefined,
+        conversationId: ctx.conversationId as string | undefined,
+      });
+    },
+    { name: `${PLUGIN_PREFIX}.message-transcribed`, description: 'Record transcribed messages' },
   );
 
   api.registerHook(
@@ -110,11 +132,15 @@ export default (api: PluginApi) => {
   // Agent Lifecycle Hooks
   // =============================================================
 
+  // api.on() lifecycle hooks receive a single merged context object,
+  // NOT (event, ctx) two parameters. The context contains both
+  // event fields (systemPrompt, prependContext, etc.) and session
+  // fields (messages, tools, etc.).
   api.on(
     'before_prompt_build',
-    (event: Record<string, unknown>, ctx: Record<string, unknown>) => {
-      const messages = ctx.messages as unknown[] | undefined;
-      const tools = ctx.tools as Array<{ name: string }> | undefined;
+    (hookCtx: Record<string, unknown>) => {
+      const messages = hookCtx.messages as unknown[] | undefined;
+      const tools = hookCtx.tools as Array<{ name: string }> | undefined;
 
       // Extract last user message for context
       let lastUserMessage: string | undefined;
@@ -137,10 +163,10 @@ export default (api: PluginApi) => {
 
       const payload: PromptBuildPayload = {
         messageCount: Array.isArray(messages) ? messages.length : undefined,
-        hasSystemPrompt: event.systemPrompt !== undefined,
-        prependContext: logger.truncate(event.prependContext as string | undefined),
-        appendSystemContext: logger.truncate(event.appendSystemContext as string | undefined),
-        prependSystemContext: logger.truncate(event.prependSystemContext as string | undefined),
+        hasSystemPrompt: hookCtx.systemPrompt !== undefined,
+        prependContext: logger.truncate(hookCtx.prependContext as string | undefined),
+        appendSystemContext: logger.truncate(hookCtx.appendSystemContext as string | undefined),
+        prependSystemContext: logger.truncate(hookCtx.prependSystemContext as string | undefined),
         lastUserMessage: logger.truncate(lastUserMessage),
         toolsCount: Array.isArray(tools) ? tools.length : undefined,
         toolNames: Array.isArray(tools) ? tools.map((t) => t.name).slice(0, 50) : undefined,
@@ -156,10 +182,10 @@ export default (api: PluginApi) => {
 
   api.on(
     'before_model_resolve',
-    (event: Record<string, unknown>) => {
+    (hookCtx: Record<string, unknown>) => {
       const payload: ModelResolvePayload = {
-        modelOverride: event.modelOverride as string | undefined,
-        providerOverride: event.providerOverride as string | undefined,
+        modelOverride: hookCtx.modelOverride as string | undefined,
+        providerOverride: hookCtx.providerOverride as string | undefined,
       };
       logger.record({ eventType: 'model:resolve', payload });
       return {};
@@ -278,7 +304,7 @@ export default (api: PluginApi) => {
   // GET /trace/api/events — return all events + stats
   api.registerHttpRoute({
     path: '/trace/api/events',
-    auth: 'plugin',
+    auth: 'gateway',
     match: 'exact',
     handler: async (_req, res) => {
       const response: EventsResponse = {
@@ -297,7 +323,7 @@ export default (api: PluginApi) => {
   // GET /trace/api/events?since=N — incremental load
   api.registerHttpRoute({
     path: '/trace/api/events/since',
-    auth: 'plugin',
+    auth: 'gateway',
     match: 'prefix',
     handler: async (req, res) => {
       const url = new URL(req.url || '', 'http://localhost');
@@ -315,7 +341,7 @@ export default (api: PluginApi) => {
   // GET /trace/api/stats — stats only
   api.registerHttpRoute({
     path: '/trace/api/stats',
-    auth: 'plugin',
+    auth: 'gateway',
     match: 'exact',
     handler: async (_req, res) => {
       res.writeHead(200, {
@@ -330,7 +356,7 @@ export default (api: PluginApi) => {
   // GET /trace/api/logs — list all log files
   api.registerHttpRoute({
     path: '/trace/api/logs',
-    auth: 'plugin',
+    auth: 'gateway',
     match: 'exact',
     handler: async (_req, res) => {
       res.writeHead(200, {
@@ -345,7 +371,7 @@ export default (api: PluginApi) => {
   // GET /trace/api/logs/load?path=... — load specific log file
   api.registerHttpRoute({
     path: '/trace/api/logs/load',
-    auth: 'plugin',
+    auth: 'gateway',
     match: 'exact',
     handler: async (req, res) => {
       const url = new URL(req.url || '', 'http://localhost');
@@ -356,8 +382,8 @@ export default (api: PluginApi) => {
         return true;
       }
 
-      // Security: only allow loading files from within our log directory
-      if (!filePath.startsWith(logger.getLogDir())) {
+      // Security: validate path is within log dir (realpath + symlink check)
+      if (!logger.isPathWithinLogDir(filePath)) {
         res.writeHead(403, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Path not allowed' }));
         return true;
@@ -376,7 +402,7 @@ export default (api: PluginApi) => {
   // GET /trace/api/sse — Server-Sent Events stream
   api.registerHttpRoute({
     path: '/trace/api/sse',
-    auth: 'plugin',
+    auth: 'gateway',
     match: 'exact',
     handler: async (req, res) => {
       res.writeHead(200, {

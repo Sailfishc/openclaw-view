@@ -5,19 +5,16 @@ import {
   statSync,
   readdirSync,
   readFileSync,
-  renameSync,
-  writeFileSync,
-  watchFile,
-  unwatchFile,
+  realpathSync,
+  lstatSync,
 } from 'node:fs';
-import { join, basename } from 'node:path';
+import { join, basename, relative } from 'node:path';
 import { homedir } from 'node:os';
 import type { TraceEvent, EventType, EventPayload, TraceStats } from '@openclaw-view/shared';
 import type { PluginConfig, PluginLogger, ServerResponse } from './types.js';
 
 const RECORD_SEPARATOR = '\n---\n';
 const DEFAULT_LOG_DIR = join(homedir(), '.openclaw', 'trace-viewer');
-const DEFAULT_MAX_LOG_SIZE = 300 * 1024 * 1024; // 300MB
 const DEFAULT_TRUNCATE_AT = 5000;
 
 export class TraceLogger {
@@ -30,8 +27,10 @@ export class TraceLogger {
   private seq = 0;
   private sseClients: Set<ServerResponse> = new Set();
   private logger: PluginLogger;
-  private watchedFile = '';
+
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private cachedStats: TraceStats | null = null;
+  private statsCacheSeq = -1;
 
   constructor(config: PluginConfig, logger: PluginLogger) {
     this.logDir = config.logDir || DEFAULT_LOG_DIR;
@@ -79,8 +78,7 @@ export class TraceLogger {
     // Reset sequence counter
     this.seq = this.countExistingRecords();
 
-    // Start watching the log file for SSE clients
-    this.startWatching();
+
   }
 
   // ------ Record Writing ------
@@ -126,9 +124,10 @@ export class TraceLogger {
     this.checkAndRotate();
 
     try {
+      // Use compact JSON (no pretty-print) to reduce file I/O
       appendFileSync(
         this.logFile,
-        JSON.stringify(event, null, 2) + RECORD_SEPARATOR,
+        JSON.stringify(event) + RECORD_SEPARATOR,
       );
     } catch (err) {
       this.logger.error(`[trace-viewer] Failed to write log: ${err}`);
@@ -140,10 +139,8 @@ export class TraceLogger {
       if (!existsSync(this.logFile)) return;
       const size = statSync(this.logFile).size;
       if (size >= this.maxLogSize) {
-        this.stopWatching();
         this.logFile = this.generateNewLogPath();
         this.logger.info(`[trace-viewer] Rotated to: ${basename(this.logFile)}`);
-        this.startWatching();
       }
     } catch { /* ignore */ }
   }
@@ -227,8 +224,12 @@ export class TraceLogger {
 
   /**
    * Compute statistics from current events.
+   * Results are cached until a new event is recorded.
    */
   computeStats(): TraceStats {
+    if (this.cachedStats && this.statsCacheSeq === this.seq) {
+      return this.cachedStats;
+    }
     const events = this.getEvents();
     const stats: TraceStats = {
       totalEvents: events.length,
@@ -283,6 +284,8 @@ export class TraceLogger {
       }
     }
 
+    this.cachedStats = stats;
+    this.statsCacheSeq = this.seq;
     return stats;
   }
 
@@ -411,34 +414,9 @@ export class TraceLogger {
     } catch { /* ignore */ }
   }
 
-  // ------ File Watching ------
-
-  private startWatching(): void {
-    if (!this.logFile || this.watchedFile === this.logFile) return;
-    this.stopWatching();
-    this.watchedFile = this.logFile;
-    // watchFile is used for cross-platform compatibility (like cc-viewer)
-    watchFile(this.logFile, { interval: 500 }, () => {
-      // File change detected — SSE clients get events via pushToSSEClients
-      // in the record() method, so no additional parsing needed here.
-      // This watcher is reserved for detecting external file changes
-      // (e.g., log rotation by another process).
-    });
-  }
-
-  private stopWatching(): void {
-    if (this.watchedFile) {
-      try {
-        unwatchFile(this.watchedFile);
-      } catch { /* ignore */ }
-      this.watchedFile = '';
-    }
-  }
-
   // ------ Cleanup ------
 
   stop(): void {
-    this.stopWatching();
     if (this.heartbeatTimer) {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;
@@ -468,6 +446,27 @@ export class TraceLogger {
 
   getLogDir(): string {
     return this.logDir;
+  }
+
+  /**
+   * Validate that a file path is safely within the log directory.
+   * Uses realpath to prevent symlink traversal attacks.
+   */
+  isPathWithinLogDir(filePath: string): boolean {
+    try {
+      // Reject symlinks
+      const lstats = lstatSync(filePath);
+      if (lstats.isSymbolicLink()) return false;
+
+      // Resolve real paths and check containment
+      const realBase = realpathSync(this.logDir);
+      const realTarget = realpathSync(filePath);
+      const rel = relative(realBase, realTarget);
+      // Must not escape the base directory
+      return !rel.startsWith('..') && !rel.startsWith('/');
+    } catch {
+      return false;
+    }
   }
 
   /**

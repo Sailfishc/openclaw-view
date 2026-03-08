@@ -6,6 +6,7 @@
 
 export type EventType =
   | 'message:received'
+  | 'message:transcribed'
   | 'message:preprocessed'
   | 'message:sent'
   | 'prompt:build'
@@ -31,6 +32,15 @@ export interface MessageReceivedPayload {
     senderName?: string;
     senderUsername?: string;
   };
+}
+
+export interface MessageTranscribedPayload {
+  body?: string;
+  bodyForAgent?: string;
+  transcript?: string;
+  channelId?: string;
+  conversationId?: string;
+  messageId?: string;
 }
 
 export interface MessagePreprocessedPayload {
@@ -96,6 +106,7 @@ export interface GatewayStartupPayload {
 
 export type EventPayload =
   | MessageReceivedPayload
+  | MessageTranscribedPayload
   | MessagePreprocessedPayload
   | MessageSentPayload
   | PromptBuildPayload
