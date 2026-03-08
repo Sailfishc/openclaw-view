@@ -5,7 +5,7 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      '/trace/api': 'http://localhost:3000'
+      '/trace/api': 'http://localhost:3001'
     }
   }
 })

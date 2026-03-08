@@ -1,0 +1,18 @@
+{"timestamp":"2026-03-08T06:34:50.927Z","seq":18,"eventType":"message:received","payload":{"from":"telegram:807770238","content":"我喜欢牛肉和羊肉。"},"project":"trace-viewer"}
+{"timestamp":"2026-03-08T06:34:51.422Z","seq":19,"eventType":"model:resolve","payload":{},"project":"trace-viewer"}
+{"timestamp":"2026-03-08T06:34:51.450Z","seq":20,"eventType":"prompt:build","payload":{"messageCount":64,"hasSystemPrompt":false},"project":"trace-viewer"}
+{"timestamp":"2026-03-08T06:34:58.359Z","seq":21,"eventType":"agent:end","payload":{"messageCount":66},"project":"trace-viewer"}
+{"timestamp":"2026-03-08T06:34:58.371Z","seq":22,"eventType":"message:sending","payload":{"to":"807770238","content":"牛肉羊肉都好吃！清汤涮这两个绝配！🍊"},"project":"trace-viewer"}
+{"timestamp":"2026-03-08T06:34:58.902Z","seq":23,"eventType":"message:sent","payload":{"to":"807770238","success":true},"project":"trace-viewer"}
+{"timestamp":"2026-03-08T06:35:12.515Z","seq":24,"eventType":"message:received","payload":{"from":"telegram:807770238","content":"那你喜欢什么呢？"},"project":"trace-viewer"}
+{"timestamp":"2026-03-08T06:35:13.064Z","seq":25,"eventType":"model:resolve","payload":{},"project":"trace-viewer"}
+{"timestamp":"2026-03-08T06:35:13.088Z","seq":26,"eventType":"prompt:build","payload":{"messageCount":66},"project":"trace-viewer"}
+{"timestamp":"2026-03-08T06:35:17.894Z","seq":27,"eventType":"agent:end","payload":{"messageCount":68},"project":"trace-viewer"}
+{"timestamp":"2026-03-08T06:35:17.909Z","seq":28,"eventType":"message:sending","payload":{"to":"807770238","content":"哈哈，你问我呀？🍊 作为一只小橙子，我其实... 吃不了东西啦！"},"project":"trace-viewer"}
+{"timestamp":"2026-03-08T06:35:18.458Z","seq":29,"eventType":"message:sent","payload":{"to":"807770238","success":true},"project":"trace-viewer"}
+{"timestamp":"2026-03-08T07:12:32.822Z","seq":30,"eventType":"message:received","payload":{"from":"telegram:807770238","content":"哦，我还没有去吃，好饿。"},"project":"trace-viewer"}
+{"timestamp":"2026-03-08T07:12:33.371Z","seq":31,"eventType":"model:resolve","payload":{},"project":"trace-viewer"}
+{"timestamp":"2026-03-08T07:12:33.429Z","seq":32,"eventType":"prompt:build","payload":{"messageCount":68},"project":"trace-viewer"}
+{"timestamp":"2026-03-08T07:12:43.847Z","seq":33,"eventType":"agent:end","payload":{"messageCount":70},"project":"trace-viewer"}
+{"timestamp":"2026-03-08T07:12:43.870Z","seq":34,"eventType":"message:sending","payload":{"to":"807770238","content":"哎呀，都下午3点多啦，还没吃饭！🍊 快快快，别等了，赶紧点个外卖吧！"},"project":"trace-viewer"}
+{"timestamp":"2026-03-08T07:12:44.384Z","seq":35,"eventType":"message:sent","payload":{"to":"807770238","success":true},"project":"trace-viewer"}
