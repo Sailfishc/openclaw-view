@@ -395,7 +395,7 @@ export default (api: PluginApi) => {
   // GET /trace/api/events — return all events + stats
   api.registerHttpRoute({
     path: '/trace/api/events',
-    auth: 'gateway',
+    auth: 'plugin',
     match: 'exact',
     handler: async (_req, res) => {
       const response: EventsResponse = {
@@ -414,7 +414,7 @@ export default (api: PluginApi) => {
   // GET /trace/api/events?since=N — incremental load
   api.registerHttpRoute({
     path: '/trace/api/events/since',
-    auth: 'gateway',
+    auth: 'plugin',
     match: 'prefix',
     handler: async (req, res) => {
       const url = new URL(req.url || '', 'http://localhost');
@@ -432,7 +432,7 @@ export default (api: PluginApi) => {
   // GET /trace/api/stats — stats only
   api.registerHttpRoute({
     path: '/trace/api/stats',
-    auth: 'gateway',
+    auth: 'plugin',
     match: 'exact',
     handler: async (_req, res) => {
       res.writeHead(200, {
@@ -447,7 +447,7 @@ export default (api: PluginApi) => {
   // GET /trace/api/logs — list all log files
   api.registerHttpRoute({
     path: '/trace/api/logs',
-    auth: 'gateway',
+    auth: 'plugin',
     match: 'exact',
     handler: async (_req, res) => {
       res.writeHead(200, {
@@ -462,7 +462,7 @@ export default (api: PluginApi) => {
   // GET /trace/api/logs/load?path=... — load specific log file
   api.registerHttpRoute({
     path: '/trace/api/logs/load',
-    auth: 'gateway',
+    auth: 'plugin',
     match: 'exact',
     handler: async (req, res) => {
       const url = new URL(req.url || '', 'http://localhost');
@@ -493,7 +493,7 @@ export default (api: PluginApi) => {
   // GET /trace/api/sse — Server-Sent Events stream
   api.registerHttpRoute({
     path: '/trace/api/sse',
-    auth: 'gateway',
+    auth: 'plugin',
     match: 'exact',
     handler: async (req, res) => {
       res.writeHead(200, {
@@ -517,7 +517,7 @@ export default (api: PluginApi) => {
   // GET /trace — Serve web viewer
   api.registerHttpRoute({
     path: '/trace',
-    auth: 'gateway',
+    auth: 'plugin',
     match: 'prefix',
     handler: async (req, res) => {
       const { readFile } = await import('fs/promises');
