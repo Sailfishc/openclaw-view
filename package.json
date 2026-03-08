@@ -1,0 +1,23 @@
+{
+  "name": "openclaw-view",
+  "version": "0.1.0",
+  "private": true,
+  "description": "OpenClaw execution trace viewer plugin",
+  "type": "module",
+  "workspaces": [
+    "shared",
+    "plugin",
+    "web"
+  ],
+  "scripts": {
+    "dev:plugin": "npm run dev --workspace=plugin",
+    "build:plugin": "npm run build --workspace=plugin",
+    "dev:web": "npm run dev --workspace=web",
+    "build:web": "npm run build --workspace=web",
+    "build": "npm run build --workspace=shared && npm run build --workspace=plugin && npm run build --workspace=web"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT"
+}

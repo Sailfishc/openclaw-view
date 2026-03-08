@@ -1,0 +1,33 @@
+{
+  "id": "trace-viewer",
+  "name": "Trace Viewer",
+  "description": "Track and visualize OpenClaw execution traces, tool calls, and token usage",
+  "version": "0.1.0",
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "logDir": {
+        "type": "string",
+        "description": "Custom log directory path (default: ~/.openclaw/trace-viewer/)"
+      },
+      "maxLogSize": {
+        "type": "number",
+        "description": "Max log file size in MB before rotation (default: 300)"
+      },
+      "port": {
+        "type": "number",
+        "description": "Preferred port for viewer UI (default: auto)"
+      },
+      "truncateContentAt": {
+        "type": "number",
+        "description": "Max characters to store for message content (default: 5000)"
+      }
+    }
+  },
+  "uiHints": {
+    "logDir": { "label": "Log Directory", "placeholder": "~/.openclaw/trace-viewer/" },
+    "maxLogSize": { "label": "Max Log Size (MB)", "placeholder": "300" },
+    "port": { "label": "Viewer UI Port" },
+    "truncateContentAt": { "label": "Content Truncation Limit", "placeholder": "5000" }
+  }
+}
