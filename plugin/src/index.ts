@@ -25,6 +25,7 @@ import type {
   MessageSentPayload,
   PromptBuildPayload,
   ModelResolvePayload,
+  ModelResponsePayload,
   BeforeToolCallPayload,
   AfterToolCallPayload,
   ToolResultPersistPayload,
@@ -46,6 +47,9 @@ export default (api: PluginApi) => {
   logger.init(projectName);
 
   api.logger.info('[trace-viewer] Plugin loaded');
+
+  // Track message count between prompt:build calls to infer LLM responses
+  let lastPromptBuildMessageCount = 0;
 
   // =============================================================
   // Message Lifecycle Hooks (api.on — plugin hooks)
@@ -178,7 +182,7 @@ export default (api: PluginApi) => {
     'before_prompt_build',
     (hookCtx: Record<string, unknown>) => {
       const messages = hookCtx.messages as unknown[] | undefined;
-      const tools = hookCtx.tools as Array<{ name: string }> | undefined;
+      const tools = hookCtx.tools as Array<{ name: string; description?: string; input_schema?: unknown }> | undefined;
 
       // Extract last user message for context
       let lastUserMessage: string | undefined;
@@ -199,18 +203,74 @@ export default (api: PluginApi) => {
         }
       }
 
+      // Build full messages snapshot — truncate each message's content individually
+      const fullMessages = Array.isArray(messages)
+        ? messages.map((m) => {
+            const msg = m as { role?: string; content?: unknown };
+            return {
+              role: msg.role || 'unknown',
+              content: truncateMessageContent(msg.content, logger),
+            };
+          })
+        : undefined;
+
+      // Build full tools snapshot — stringify schemas & truncate
+      const fullTools = Array.isArray(tools)
+        ? tools.map((t) => ({
+            name: t.name,
+            description: logger.truncate(t.description),
+            inputSchema: t.input_schema
+              ? logger.truncate(JSON.stringify(t.input_schema))
+              : undefined,
+          }))
+        : undefined;
+
       const payload: PromptBuildPayload = {
         messageCount: Array.isArray(messages) ? messages.length : undefined,
         hasSystemPrompt: hookCtx.systemPrompt !== undefined,
+        systemPrompt: logger.truncate(
+          typeof hookCtx.systemPrompt === 'string'
+            ? hookCtx.systemPrompt
+            : hookCtx.systemPrompt
+              ? JSON.stringify(hookCtx.systemPrompt)
+              : undefined,
+        ),
         prependContext: logger.truncate(hookCtx.prependContext as string | undefined),
         appendSystemContext: logger.truncate(hookCtx.appendSystemContext as string | undefined),
         prependSystemContext: logger.truncate(hookCtx.prependSystemContext as string | undefined),
         lastUserMessage: logger.truncate(lastUserMessage),
         toolsCount: Array.isArray(tools) ? tools.length : undefined,
         toolNames: Array.isArray(tools) ? tools.map((t) => t.name).slice(0, 50) : undefined,
+        messages: fullMessages,
+        tools: fullTools,
       };
 
       logger.record({ eventType: 'prompt:build', payload });
+
+      // --- Infer LLM response from messages diff ---
+      // If this is NOT the first prompt:build in this loop, the messages
+      // array has grown since last time. The new entries are the LLM's
+      // previous response (assistant message) + tool results.
+      const currentCount = Array.isArray(messages) ? messages.length : 0;
+      if (lastPromptBuildMessageCount > 0 && currentCount > lastPromptBuildMessageCount && Array.isArray(messages)) {
+        const newMessages = messages.slice(lastPromptBuildMessageCount).map((m) => {
+          const msg = m as { role?: string; content?: unknown };
+          return {
+            role: msg.role || 'unknown',
+            content: truncateMessageContent(msg.content, logger),
+          };
+        });
+
+        const responsePayload: ModelResponsePayload = {
+          source: 'messages_diff',
+          newMessages,
+          newMessageCount: newMessages.length,
+          previousMessageCount: lastPromptBuildMessageCount,
+          currentMessageCount: currentCount,
+        };
+        logger.record({ eventType: 'model:response', payload: responsePayload });
+      }
+      lastPromptBuildMessageCount = currentCount;
 
       // Return empty — we don't modify the prompt
       return {};
@@ -293,11 +353,70 @@ export default (api: PluginApi) => {
     'agent_end',
     (ctx: Record<string, unknown>) => {
       const messages = ctx.messages as unknown[] | undefined;
+
+      // Try to extract last assistant message
+      let lastAssistantMessage: string | undefined;
+      if (Array.isArray(messages)) {
+        for (let i = messages.length - 1; i >= 0; i--) {
+          const msg = messages[i] as { role?: string; content?: unknown };
+          if (msg?.role === 'assistant') {
+            const content = msg.content;
+            if (typeof content === 'string') {
+              lastAssistantMessage = content;
+            } else if (Array.isArray(content)) {
+              // Concatenate text blocks from the assistant response
+              lastAssistantMessage = (content as Array<{ type: string; text?: string }>)
+                .filter((b) => b.type === 'text' && b.text)
+                .map((b) => b.text)
+                .join('\n');
+            }
+            break;
+          }
+        }
+      }
+
+      // Try to extract usage/token info
+      const usage = ctx.usage as Record<string, unknown> | undefined;
+
       const payload: AgentEndPayload = {
         status: ctx.status as string | undefined,
         messageCount: Array.isArray(messages) ? messages.length : undefined,
         error: ctx.error as string | undefined,
+        lastAssistantMessage: logger.truncate(lastAssistantMessage),
+        usage: usage
+          ? {
+              inputTokens: usage.inputTokens as number | undefined,
+              outputTokens: usage.outputTokens as number | undefined,
+              cacheReadTokens: usage.cacheReadTokens as number | undefined,
+              cacheWriteTokens: usage.cacheWriteTokens as number | undefined,
+            }
+          : undefined,
       };
+
+      // Emit final model:response for messages added since last prompt:build
+      const currentCount = Array.isArray(messages) ? messages.length : 0;
+      if (lastPromptBuildMessageCount > 0 && currentCount > lastPromptBuildMessageCount && Array.isArray(messages)) {
+        const newMessages = messages.slice(lastPromptBuildMessageCount).map((m) => {
+          const msg = m as { role?: string; content?: unknown };
+          return {
+            role: msg.role || 'unknown',
+            content: truncateMessageContent(msg.content, logger),
+          };
+        });
+
+        const responsePayload: ModelResponsePayload = {
+          source: 'agent_end',
+          newMessages,
+          newMessageCount: newMessages.length,
+          previousMessageCount: lastPromptBuildMessageCount,
+          currentMessageCount: currentCount,
+        };
+        logger.record({ eventType: 'model:response', payload: responsePayload });
+      }
+
+      // Reset tracking for next agent loop
+      lastPromptBuildMessageCount = 0;
+
       logger.record({ eventType: 'agent:end', payload });
       return {};
     },
@@ -569,6 +688,64 @@ export default (api: PluginApi) => {
 // =============================================================
 // Helpers
 // =============================================================
+
+/**
+ * Truncate message content for logging.
+ * Handles string content, array-of-blocks content, and other shapes.
+ */
+function truncateMessageContent(content: unknown, logger: TraceLogger): unknown {
+  if (content === null || content === undefined) return content;
+
+  // Simple string content
+  if (typeof content === 'string') {
+    return logger.truncate(content);
+  }
+
+  // Array of content blocks (Claude format: [{type:"text", text:"..."}, {type:"tool_use", ...}])
+  if (Array.isArray(content)) {
+    return content.map((block: unknown) => {
+      if (typeof block !== 'object' || block === null) return block;
+      const b = block as Record<string, unknown>;
+
+      // Text blocks — truncate the text
+      if (b.type === 'text' && typeof b.text === 'string') {
+        return { ...b, text: logger.truncate(b.text) };
+      }
+
+      // Tool use blocks — truncate the input args
+      if (b.type === 'tool_use' && b.input !== undefined) {
+        const inputStr = typeof b.input === 'string'
+          ? b.input
+          : JSON.stringify(b.input);
+        return { ...b, input: logger.truncate(inputStr) };
+      }
+
+      // Tool result blocks — truncate content
+      if (b.type === 'tool_result' && b.content !== undefined) {
+        return { ...b, content: truncateMessageContent(b.content, logger) };
+      }
+
+      // Image blocks or other types — keep type info, drop heavy data
+      if (b.type === 'image') {
+        return { type: 'image', source_type: (b.source as Record<string, unknown>)?.type ?? 'unknown' };
+      }
+
+      // Fallback: stringify & truncate
+      const str = JSON.stringify(b);
+      if (str.length > 5000) {
+        return { _truncated: true, type: b.type, preview: str.slice(0, 500) + '...' };
+      }
+      return b;
+    });
+  }
+
+  // Object fallback
+  const str = JSON.stringify(content);
+  if (str.length > 5000) {
+    return str.slice(0, 5000) + '... [truncated]';
+  }
+  return content;
+}
 
 function truncateResult(content: unknown, logger: TraceLogger): unknown {
   if (typeof content === 'string') {

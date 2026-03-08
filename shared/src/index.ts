@@ -12,6 +12,7 @@ export type EventType =
   | 'message:sent'
   | 'prompt:build'
   | 'model:resolve'
+  | 'model:response'
   | 'tool:before_call'
   | 'tool:after_call'
   | 'tool_result:persist'
@@ -83,11 +84,44 @@ export interface PromptBuildPayload {
   lastUserMessage?: string;
   toolsCount?: number;
   toolNames?: string[];
+  /** Full system prompt text (truncated per item) */
+  systemPrompt?: string;
+  /** Full messages array — each message content individually truncated */
+  messages?: PromptMessage[];
+  /** Full tool definitions — input_schema stringified & truncated */
+  tools?: PromptTool[];
+}
+
+/** Lightweight representation of a message in the prompt */
+export interface PromptMessage {
+  role: string;
+  content?: unknown;
+}
+
+/** Lightweight representation of a tool definition */
+export interface PromptTool {
+  name: string;
+  description?: string;
+  inputSchema?: string;
 }
 
 export interface ModelResolvePayload {
   modelOverride?: string;
   providerOverride?: string;
+}
+
+/** Inferred LLM response — reconstructed from messages diff between prompt:build calls */
+export interface ModelResponsePayload {
+  /** How the response was inferred */
+  source: 'messages_diff' | 'agent_end';
+  /** The new messages added since last prompt:build (i.e. the LLM response + tool results) */
+  newMessages: PromptMessage[];
+  /** Number of new messages */
+  newMessageCount: number;
+  /** Previous total message count (at last prompt:build) */
+  previousMessageCount: number;
+  /** Current total message count */
+  currentMessageCount: number;
 }
 
 export interface BeforeToolCallPayload {
@@ -131,6 +165,15 @@ export interface AgentEndPayload {
   status?: string;
   messageCount?: number;
   error?: string;
+  /** Token usage if available from the run */
+  usage?: {
+    inputTokens?: number;
+    outputTokens?: number;
+    cacheReadTokens?: number;
+    cacheWriteTokens?: number;
+  };
+  /** Last assistant message content (truncated) */
+  lastAssistantMessage?: string;
 }
 
 export interface GatewayStartupPayload {
@@ -145,6 +188,7 @@ export type EventPayload =
   | MessageSentPayload
   | PromptBuildPayload
   | ModelResolvePayload
+  | ModelResponsePayload
   | BeforeToolCallPayload
   | AfterToolCallPayload
   | ToolResultPersistPayload
