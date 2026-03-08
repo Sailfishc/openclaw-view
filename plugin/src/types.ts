@@ -33,6 +33,8 @@ export interface PluginConfig {
   maxLogSize?: number;
   port?: number;
   truncateContentAt?: number;
+  /** Fixed project name (avoids unreliable process.cwd() in Gateway) */
+  projectName?: string;
 }
 
 export interface HttpRouteConfig {

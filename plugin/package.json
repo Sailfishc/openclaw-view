@@ -5,6 +5,11 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "openclaw": {
+    "extensions": {
+      "trace-viewer": "./dist/index.js"
+    }
+  },
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch"
@@ -13,6 +18,7 @@
     "@openclaw-view/shared": "0.1.0"
   },
   "devDependencies": {
+    "@types/node": "^25.3.5",
     "typescript": "^5.7.0"
   }
 }

@@ -31,8 +31,12 @@ export default (api: PluginApi) => {
   const config: PluginConfig = (api.config ?? {}) as PluginConfig;
   const logger = new TraceLogger(config, api.logger);
 
-  // Initialize on startup
-  logger.init();
+  // Initialize on startup with a fixed project name.
+  // Gateway process.cwd() is unreliable, so we derive the name from config
+  // or fall back to the plugin id. The agent:bootstrap hook will re-init
+  // with the actual workspace directory when it fires.
+  const projectName = config.projectName || PLUGIN_PREFIX;
+  logger.init(projectName);
 
   api.logger.info('[trace-viewer] Plugin loaded');
 
@@ -42,7 +46,7 @@ export default (api: PluginApi) => {
 
   api.registerHook(
     'message:received',
-    async (_event: unknown, ctx: Record<string, unknown>) => {
+    async (ctx: Record<string, unknown>) => {
       const payload: MessageReceivedPayload = {
         from: String(ctx.from ?? ''),
         content: logger.truncate(String(ctx.content ?? '')) ?? '',
@@ -61,7 +65,7 @@ export default (api: PluginApi) => {
 
   api.registerHook(
     'message:preprocessed',
-    async (_event: unknown, ctx: Record<string, unknown>) => {
+    async (ctx: Record<string, unknown>) => {
       const payload: MessagePreprocessedPayload = {
         body: logger.truncate(ctx.body as string | undefined),
         bodyForAgent: logger.truncate(ctx.bodyForAgent as string | undefined),
@@ -82,7 +86,7 @@ export default (api: PluginApi) => {
 
   api.registerHook(
     'message:sent',
-    async (_event: unknown, ctx: Record<string, unknown>) => {
+    async (ctx: Record<string, unknown>) => {
       const payload: MessageSentPayload = {
         to: String(ctx.to ?? ''),
         content: logger.truncate(String(ctx.content ?? '')) ?? '',
@@ -189,7 +193,7 @@ export default (api: PluginApi) => {
 
   api.registerHook(
     'session:compact:before',
-    async (_event: unknown, ctx: Record<string, unknown>) => {
+    async (ctx: Record<string, unknown>) => {
       logger.record({
         eventType: 'session:compact',
         payload: {
@@ -204,7 +208,7 @@ export default (api: PluginApi) => {
 
   api.registerHook(
     'session:compact:after',
-    async (_event: unknown, ctx: Record<string, unknown>) => {
+    async (ctx: Record<string, unknown>) => {
       logger.record({
         eventType: 'session:compact',
         payload: {
@@ -242,10 +246,15 @@ export default (api: PluginApi) => {
 
   api.registerHook(
     'agent:bootstrap',
-    async (_event: unknown, ctx: Record<string, unknown>) => {
+    async (ctx: Record<string, unknown>) => {
+      // Re-initialize with workspace directory if available
+      const workspaceDir = ctx.workspaceDir as string | undefined;
+      if (workspaceDir) {
+        logger.reinitWithWorkspace(workspaceDir);
+      }
       logger.record({
         eventType: 'agent:bootstrap',
-        payload: { workspaceDir: ctx.workspaceDir as string | undefined },
+        payload: { workspaceDir },
       });
     },
     { name: `${PLUGIN_PREFIX}.bootstrap` },

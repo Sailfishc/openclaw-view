@@ -48,12 +48,18 @@ export class TraceLogger {
   // ------ Initialization ------
 
   /**
-   * Initialize logging for a project. Call when gateway starts
-   * or when the active project changes.
+   * Initialize logging for a project.
+   * Accepts a fixed project name (preferred) or a directory path
+   * whose basename will be used. Falls back to 'trace-viewer'.
    */
-  init(projectPath?: string): void {
-    const cwd = projectPath || this.safeCwd();
-    this.projectName = basename(cwd).replace(/[^a-zA-Z0-9_\-.]/g, '_');
+  init(projectNameOrPath?: string): void {
+    if (projectNameOrPath && !projectNameOrPath.includes('/') && !projectNameOrPath.includes('\\')) {
+      // Treat as a direct project name (no path separators)
+      this.projectName = projectNameOrPath.replace(/[^a-zA-Z0-9_\-.]/g, '_');
+    } else {
+      const cwd = projectNameOrPath || 'trace-viewer';
+      this.projectName = basename(cwd).replace(/[^a-zA-Z0-9_\-.]/g, '_');
+    }
     this.projectDir = join(this.logDir, this.projectName);
 
     try {
@@ -464,11 +470,15 @@ export class TraceLogger {
     return this.logDir;
   }
 
-  private safeCwd(): string {
-    try {
-      return process.cwd();
-    } catch {
-      return homedir();
+  /**
+   * Re-initialize with a workspace directory once agent:bootstrap fires.
+   * This updates the project name to match the actual workspace.
+   */
+  reinitWithWorkspace(workspaceDir: string): void {
+    const newName = basename(workspaceDir).replace(/[^a-zA-Z0-9_\-.]/g, '_');
+    if (newName && newName !== this.projectName) {
+      this.logger.info(`[trace-viewer] Switching project: ${this.projectName} → ${newName}`);
+      this.init(workspaceDir);
     }
   }
 }

@@ -21,6 +21,10 @@
       "truncateContentAt": {
         "type": "number",
         "description": "Max characters to store for message content (default: 5000)"
+      },
+      "projectName": {
+        "type": "string",
+        "description": "Fixed project name for log grouping (avoids unreliable process.cwd() in Gateway)"
       }
     }
   },
@@ -28,6 +32,7 @@
     "logDir": { "label": "Log Directory", "placeholder": "~/.openclaw/trace-viewer/" },
     "maxLogSize": { "label": "Max Log Size (MB)", "placeholder": "300" },
     "port": { "label": "Viewer UI Port" },
-    "truncateContentAt": { "label": "Content Truncation Limit", "placeholder": "5000" }
+    "truncateContentAt": { "label": "Content Truncation Limit", "placeholder": "5000" },
+    "projectName": { "label": "Project Name", "placeholder": "my-agent" }
   }
 }
