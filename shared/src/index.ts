@@ -8,10 +8,14 @@ export type EventType =
   | 'message:received'
   | 'message:transcribed'
   | 'message:preprocessed'
+  | 'message:sending'
   | 'message:sent'
   | 'prompt:build'
   | 'model:resolve'
+  | 'tool:before_call'
+  | 'tool:after_call'
   | 'tool_result:persist'
+  | 'agent:end'
   | 'session:compact'
   | 'command'
   | 'agent:bootstrap'
@@ -52,6 +56,14 @@ export interface MessagePreprocessedPayload {
   groupId?: string;
 }
 
+export interface MessageSendingPayload {
+  to?: string;
+  content?: string;
+  channelId?: string;
+  conversationId?: string;
+  messageId?: string;
+}
+
 export interface MessageSentPayload {
   to: string;
   content: string;
@@ -78,6 +90,21 @@ export interface ModelResolvePayload {
   providerOverride?: string;
 }
 
+export interface BeforeToolCallPayload {
+  toolName?: string;
+  toolUseId?: string;
+  args?: unknown;
+}
+
+export interface AfterToolCallPayload {
+  toolName?: string;
+  toolUseId?: string;
+  result?: unknown;
+  error?: string;
+  duration?: number;
+  isError?: boolean;
+}
+
 export interface ToolResultPersistPayload {
   toolName?: string;
   toolUseId?: string;
@@ -100,6 +127,12 @@ export interface BootstrapPayload {
   workspaceDir?: string;
 }
 
+export interface AgentEndPayload {
+  status?: string;
+  messageCount?: number;
+  error?: string;
+}
+
 export interface GatewayStartupPayload {
   timestamp: string;
 }
@@ -108,10 +141,14 @@ export type EventPayload =
   | MessageReceivedPayload
   | MessageTranscribedPayload
   | MessagePreprocessedPayload
+  | MessageSendingPayload
   | MessageSentPayload
   | PromptBuildPayload
   | ModelResolvePayload
+  | BeforeToolCallPayload
+  | AfterToolCallPayload
   | ToolResultPersistPayload
+  | AgentEndPayload
   | SessionCompactPayload
   | CommandPayload
   | BootstrapPayload

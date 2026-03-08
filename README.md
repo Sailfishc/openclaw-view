@@ -145,17 +145,35 @@ npm run dev:plugin
 - **Shared**: TypeScript type definitions
 - **Web** (Phase 2): React 18, Vite 6, Ant Design
 
+## Usage
+
+1. Build the project:
+```bash
+npm install
+npm run build
+```
+
+2. Start OpenClaw with the plugin enabled
+
+3. Open the web viewer:
+```
+http://localhost:3000/trace
+```
+
+The viewer will display all trace events in real-time.
+
 ## Roadmap
 
 - [x] Plugin: Hook interception (11 event types)
 - [x] Plugin: JSONL log management (write, rotate, resume)
 - [x] Plugin: HTTP API (6 endpoints)
 - [x] Plugin: SSE real-time push
-- [ ] Web: Event list (Raw mode)
-- [ ] Web: Event detail panel
+- [x] Web: Event list (Raw mode)
+- [x] Web: Event detail panel
 - [ ] Web: Stats dashboard
 - [ ] Web: Log file browser
 - [ ] Web: Conversation mode
+- [ ] Web: Real-time SSE updates
 
 ## License
 

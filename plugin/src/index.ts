@@ -6,11 +6,13 @@
 // HTTP routes for the viewer UI and API.
 //
 // Hook coverage:
-//   [必须] message:received, message:preprocessed, message:sent
-//   [必须] before_prompt_build, before_model_resolve
-//   [必须] tool_result_persist
-//   [推荐] session:compact:before/after, command:new/reset/stop
-//   [可选] agent:bootstrap, gateway:startup
+//   [api.on]  message_received, message_sending, message_sent
+//   [api.on]  before_prompt_build, before_model_resolve
+//   [api.on]  before_tool_call, after_tool_call, agent_end
+//   [registerHook] message:transcribed, message:preprocessed
+//   [registerHook] tool_result_persist
+//   [registerHook] session:compact:before/after, command:new/reset/stop
+//   [registerHook] agent:bootstrap, gateway:startup
 // ============================================================
 
 import { TraceLogger } from './trace-logger.js';
@@ -19,10 +21,14 @@ import type {
   MessageReceivedPayload,
   MessageTranscribedPayload,
   MessagePreprocessedPayload,
+  MessageSendingPayload,
   MessageSentPayload,
   PromptBuildPayload,
   ModelResolvePayload,
+  BeforeToolCallPayload,
+  AfterToolCallPayload,
   ToolResultPersistPayload,
+  AgentEndPayload,
   EventsResponse,
 } from '@openclaw-view/shared';
 
@@ -42,12 +48,18 @@ export default (api: PluginApi) => {
   api.logger.info('[trace-viewer] Plugin loaded');
 
   // =============================================================
-  // Event Hooks — Message Lifecycle
+  // Message Lifecycle Hooks (api.on — plugin hooks)
+  //
+  // Agent Loop docs list message_received / message_sending /
+  // message_sent as plugin hooks (underscore naming, api.on).
+  // message:transcribed and message:preprocessed are only in the
+  // automation hooks system — we keep registerHook for those as
+  // fallback but also try api.on for resilience.
   // =============================================================
 
-  api.registerHook(
-    'message:received',
-    async (ctx: Record<string, unknown>) => {
+  api.on(
+    'message_received',
+    (ctx: Record<string, unknown>) => {
       const payload: MessageReceivedPayload = {
         from: String(ctx.from ?? ''),
         content: logger.truncate(String(ctx.content ?? '')) ?? '',
@@ -60,10 +72,13 @@ export default (api: PluginApi) => {
         channelId: ctx.channelId as string | undefined,
         conversationId: ctx.conversationId as string | undefined,
       });
+      return {};
     },
-    { name: `${PLUGIN_PREFIX}.message-received`, description: 'Record inbound messages' },
+    { priority: -100 },
   );
 
+  // message:transcribed — only exists in automation hooks, not
+  // listed as a plugin hook in Agent Loop docs.
   api.registerHook(
     'message:transcribed',
     async (ctx: Record<string, unknown>) => {
@@ -85,6 +100,7 @@ export default (api: PluginApi) => {
     { name: `${PLUGIN_PREFIX}.message-transcribed`, description: 'Record transcribed messages' },
   );
 
+  // message:preprocessed — only exists in automation hooks.
   api.registerHook(
     'message:preprocessed',
     async (ctx: Record<string, unknown>) => {
@@ -106,9 +122,30 @@ export default (api: PluginApi) => {
     { name: `${PLUGIN_PREFIX}.message-preprocessed`, description: 'Record preprocessed messages' },
   );
 
-  api.registerHook(
-    'message:sent',
-    async (ctx: Record<string, unknown>) => {
+  api.on(
+    'message_sending',
+    (ctx: Record<string, unknown>) => {
+      const payload: MessageSendingPayload = {
+        to: ctx.to as string | undefined,
+        content: logger.truncate(ctx.content as string | undefined),
+        channelId: ctx.channelId as string | undefined,
+        conversationId: ctx.conversationId as string | undefined,
+        messageId: ctx.messageId as string | undefined,
+      };
+      logger.record({
+        eventType: 'message:sending',
+        payload,
+        channelId: ctx.channelId as string | undefined,
+        conversationId: ctx.conversationId as string | undefined,
+      });
+      return {};
+    },
+    { priority: -100 },
+  );
+
+  api.on(
+    'message_sent',
+    (ctx: Record<string, unknown>) => {
       const payload: MessageSentPayload = {
         to: String(ctx.to ?? ''),
         content: logger.truncate(String(ctx.content ?? '')) ?? '',
@@ -124,8 +161,9 @@ export default (api: PluginApi) => {
         channelId: ctx.channelId as string | undefined,
         conversationId: ctx.conversationId as string | undefined,
       });
+      return {};
     },
-    { name: `${PLUGIN_PREFIX}.message-sent`, description: 'Record outbound messages' },
+    { priority: -100 },
   );
 
   // =============================================================
@@ -194,9 +232,44 @@ export default (api: PluginApi) => {
   );
 
   // =============================================================
-  // Tool Result Hook
+  // Tool Lifecycle Hooks (api.on — plugin hooks)
   // =============================================================
 
+  api.on(
+    'before_tool_call',
+    (ctx: Record<string, unknown>) => {
+      const payload: BeforeToolCallPayload = {
+        toolName: ctx.toolName as string | undefined,
+        toolUseId: ctx.toolUseId as string | undefined,
+        args: ctx.args ?? ctx.input,
+      };
+      logger.record({ eventType: 'tool:before_call', payload });
+      return {};
+    },
+    { priority: -100 },
+  );
+
+  api.on(
+    'after_tool_call',
+    (ctx: Record<string, unknown>) => {
+      const payload: AfterToolCallPayload = {
+        toolName: ctx.toolName as string | undefined,
+        toolUseId: ctx.toolUseId as string | undefined,
+        result: truncateResult(ctx.result, logger),
+        error: ctx.error as string | undefined,
+        duration: ctx.duration as number | undefined,
+        isError: ctx.isError as boolean | undefined,
+      };
+      logger.record({ eventType: 'tool:after_call', payload });
+      return {};
+    },
+    { priority: -100 },
+  );
+
+  // tool_result_persist — synchronous hook via registerHook.
+  // Hooks.md explicitly says this is a Plugin API hook that must
+  // be synchronous. Keep registerHook for now; if it doesn't fire,
+  // after_tool_call above covers the same ground.
   api.registerHook(
     'tool_result_persist',
     (toolResult: Record<string, unknown>) => {
@@ -207,10 +280,28 @@ export default (api: PluginApi) => {
         isError: toolResult.is_error as boolean | undefined,
       };
       logger.record({ eventType: 'tool_result:persist', payload });
-      // Return undefined — don't modify the tool result
       return undefined;
     },
     { name: `${PLUGIN_PREFIX}.tool-result`, description: 'Record tool results' },
+  );
+
+  // =============================================================
+  // Agent End Hook (api.on — plugin hook)
+  // =============================================================
+
+  api.on(
+    'agent_end',
+    (ctx: Record<string, unknown>) => {
+      const messages = ctx.messages as unknown[] | undefined;
+      const payload: AgentEndPayload = {
+        status: ctx.status as string | undefined,
+        messageCount: Array.isArray(messages) ? messages.length : undefined,
+        error: ctx.error as string | undefined,
+      };
+      logger.record({ eventType: 'agent:end', payload });
+      return {};
+    },
+    { priority: -100 },
   );
 
   // =============================================================
@@ -419,6 +510,42 @@ export default (api: PluginApi) => {
       });
 
       // Keep the connection open — return true but don't end the response
+      return true;
+    },
+  });
+
+  // GET /trace — Serve web viewer
+  api.registerHttpRoute({
+    path: '/trace',
+    auth: 'gateway',
+    match: 'prefix',
+    handler: async (req, res) => {
+      const { readFile } = await import('fs/promises');
+      const { join, dirname } = await import('path');
+      const { fileURLToPath } = await import('url');
+      
+      const __dirname = dirname(fileURLToPath(import.meta.url));
+      const webDir = join(__dirname, '../../web/dist');
+      
+      let filePath = req.url?.replace('/trace', '') || '/index.html';
+      if (filePath === '' || filePath === '/') filePath = '/index.html';
+      
+      const fullPath = join(webDir, filePath);
+      
+      try {
+        const content = await readFile(fullPath);
+        const ext = filePath.split('.').pop();
+        const contentType = ext === 'js' ? 'application/javascript'
+          : ext === 'css' ? 'text/css'
+          : ext === 'html' ? 'text/html'
+          : 'application/octet-stream';
+        
+        res.writeHead(200, { 'Content-Type': contentType });
+        res.end(content);
+      } catch {
+        res.writeHead(404);
+        res.end('Not found');
+      }
       return true;
     },
   });

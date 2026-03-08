@@ -64,6 +64,6 @@ export interface ServerResponse {
   writeHead(statusCode: number, headers?: Record<string, string>): void;
   setHeader(name: string, value: string): void;
   write(chunk: string): boolean;
-  end(data?: string): void;
+  end(data?: string | Buffer): void;
   on(event: string, listener: (...args: unknown[]) => void): void;
 }
